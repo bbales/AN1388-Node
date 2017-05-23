@@ -1,4 +1,4 @@
-Programmer = new(require('./programmer'))()
+const Programmer = new(require('./programmer'))()
 
 // Test byte array
 let dataw = [
@@ -11,4 +11,8 @@ let dataw = [
 ].map(byte => String.fromCharCode(byte))
 
 // Calculate the CRC
-console.log(Programmer.crc16(dataw))
+// console.log(Programmer.crc16(dataw))
+
+Programmer.onceConnected().then(() => {
+    console.log(Programmer._port)
+})

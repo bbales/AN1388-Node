@@ -1,11 +1,62 @@
-serial = require('serialport')
+'use strict'
+
+const Serial = require('serialport')
 
 module.exports = class Programmer {
-    constructor() {
+    constructor(baudRate = 115200) {
         this.CRCLookup = [
             0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
             0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1c1, 0xf1ef
         ]
+
+        // Set serial baud rate
+        this.baudRate = baudRate
+
+        // Open the USB port
+        this._configurePort().then(() => {
+            console.log((`Port '${this._port}' opened sucessfully!`))
+        })
+    }
+
+    async _configurePort(port = '/dev/ttyUSB0') {
+        // Fetch available USB ports
+        var usbPorts = await new Promise((resolve, reject) => {
+            return Serial.list((e, p) => {
+                if (e) return reject(e)
+                return resolve(p.filter(n => n.comName.indexOf('USB') > -1))
+            })
+        })
+
+        // Set instance port
+        this._port = usbPorts[0].comName
+
+        // Set up UART
+        const serialOptions = {
+            baudRate: this.baudRate
+        }
+
+        // Open first available (for now)
+        this.port = new Serial(this._port, serialOptions)
+
+        // Wait for port to open
+        let success = await new Promise((resolve, reject) => this.port.on('open', () => resolve(true)))
+
+        return success
+    }
+
+    get connected() {
+        return !!this.port && this.port.isOpen()
+    }
+
+    onceConnected() {
+        return new Promise((resolve, reject) => {
+            let f;
+            (f = () => {
+                if (this.connected) return resolve()
+                else if (this.stopped) return reject()
+                else return setTimeout(() => f(), 100)
+            })()
+        })
     }
 
     //
@@ -51,7 +102,11 @@ module.exports = class Programmer {
     //
 
     send(command) {
+        command = this.escape(command)
 
+        request = `\x01` + command + this.escape(crc16(command)) + `\x04`
+
+        return request.length
     }
 
     //
