@@ -1,0 +1,14 @@
+{
+  "name": "an1388-node",
+  "version": "1.0.0",
+  "main": "programmer.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Benjamin Bales",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "serialport": "^4.0.7"
+  }
+}
