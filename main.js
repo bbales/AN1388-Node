@@ -20,16 +20,6 @@ Programmer.onceConnected().then(() => {
         console.log('Upload Failure')
         process.exit()
     })
-    // Programmer.crc16(['\x03',
-    //     '\x02',
-    //     '\x00',
-    //     '\x00',
-    //     '\x04',
-    //     '\x00',
-    //     '\x00',
-    //     '\xfa'
-    // ])
-
 })
 
 console._debug = 1
