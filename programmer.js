@@ -1,9 +1,12 @@
 'use strict'
 
 const Serial = require('serialport')
+const EventEmitter = require('events').EventEmitter;
 
-module.exports = class Programmer {
+module.exports = class Programmer extends EventEmitter {
     constructor(baudRate = 115200) {
+        super()
+
         this.CRCLookup = [
             0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
             0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1c1, 0xf1ef
@@ -36,14 +39,37 @@ module.exports = class Programmer {
         // Open first available (for now)
         this.port = new Serial(this._port, serialOptions)
 
-        // Wait for port to open
-        let success = await new Promise((resolve, reject) => this.port.on('open', () => resolve(true)))
+        this.responseData = []
 
-        return success
+        // Read data when it is received
+        this.port.on('data', data => this.handleData(data))
+
+        this.responseData = []
+
+        return true
     }
 
     get connected() {
         return !!this.port && this.port.isOpen()
+    }
+
+    handleData(data) {
+        // Create a new array for buffer conversion
+        var output = []
+
+        // Fill array with contents of buffer and convert to unicode
+        for (var i = 0; i < data.length; i++) output.push(String.fromCharCode(data[i]))
+
+        // Check sequence characters
+        if (output[0] !== '\x01' || output[output.length - 1] !== '\x04') throw ('Bad response')
+
+        // Unescape control characters and strip front and back
+        let response = this.unescape(output.slice(1, -1)).split('')
+
+        // Set the last response
+        this.lastResponse = response.slice(1, -2)
+
+        this.emit('newData', this.lastResponse)
     }
 
     onceConnected() {
@@ -62,6 +88,7 @@ module.exports = class Programmer {
     //
 
     crc16(data) {
+        data = typeof(data) == 'string' ? data.split('') : data
         let i = 0
         let crc = 0
         data.forEach(byte => {
@@ -86,7 +113,7 @@ module.exports = class Programmer {
     escape(data) {
         const check = ['\x10', '\x01', '\x04']
         data = typeof(data) == 'string' ? data.split('') : data
-        return data.map(d => check.indexOf(d) >= 0 ? '\x10' + d : d)
+        return data.map(d => check.indexOf(d) >= 0 ? '\x10' + d : d).toString()
     }
 
     //
@@ -112,10 +139,15 @@ module.exports = class Programmer {
     // Send A Command
     //
 
-    send(command) {
+    async send(command) {
         command = this.escape(command)
+        let request = `\x01` + command + this.escape(this.crc16(command)) + `\x04`
 
-        request = `\x01` + command + this.escape(crc16(command)) + `\x04`
+        if (!this.connected) throw 'Port not connected, unable to write.'
+
+        await new Promise((resolve, reject) => {
+            this.port.write(new Buffer(request), e => e ? reject(e) : resolve())
+        })
 
         return request.length
     }
@@ -125,7 +157,33 @@ module.exports = class Programmer {
     //
 
     response(command) {
-
+        console.log(command)
+        // response = ''
+        // while (response.length < 4 | response[response.length - 1] != '\x04' | response[response.length - 2] == '\x10') {
+        //     byte = port.read(1)
+        //     if len(byte) == 0:
+        //         raise IOError('Bootloader response timed out')
+        //     if byte == '\x01'
+        //     or len(response) > 0:
+        //         response += byte
+        // }
+        //
+        // if DEBUG_LEVEL >= 2:
+        //     print('<', hexlify(response))
+        //
+        // if response[0] != '\x01'
+        // or response[-1] != '\x04':
+        //     raise IOError('Invalid response from bootloader')
+        //
+        // response = unescape(response[1: -1])
+        //
+        // # Verify SOH, EOT and command fields
+        // if response[0] != command:
+        //     raise IOError('Unexpected response type from bootloader')
+        // if crc16(response[: -2]) != response[-2: ]:
+        //     raise IOError('Invalid CRC from bootloader')
+        //
+        // return response[1: -2]
     }
 
     //

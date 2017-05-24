@@ -1,3 +1,4 @@
+const process = require('process')
 const Programmer = new(require('./programmer'))()
 
 // Test byte array
@@ -14,6 +15,13 @@ let dataw = [
 // console.log(Programmer.crc16(dataw))
 
 Programmer.onceConnected().then(() => {
-    console.log(Programmer._port)
-    console.log(Programmer.unescape(Programmer.escape('\x02\x10\x01\x04\x05')).split(''))
+
+    console.log('Querying..')
+    Programmer.send('\x01')
+
+    Programmer.on('newData', d => {
+        console.log(d)
+    })
+
+    // process.exit()
 })
