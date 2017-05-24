@@ -27,6 +27,10 @@ module.exports = class Programmer extends EventEmitter {
         this._configurePort().then(() => console.debug((`Port '${this._port}' opened sucessfully!`)))
     }
 
+    //
+    // Set up the UART port
+    //
+
     async _configurePort(port = '/dev/ttyUSB0') {
         // Fetch available USB ports
         let usbPorts = await new Promise((resolve, reject) => {
@@ -55,9 +59,9 @@ module.exports = class Programmer extends EventEmitter {
         return true
     }
 
-    get connected() {
-        return !!this.port && this.port.isOpen()
-    }
+    //
+    // Private incoming data handler
+    //
 
     _handleData(data) {
         // Clear response timeout
@@ -81,6 +85,18 @@ module.exports = class Programmer extends EventEmitter {
         // Emit new processed data event
         this.emit('newData', this.lastResponse)
     }
+
+    //
+    // Alias for checking connection status
+    //
+
+    get connected() {
+        return !!this.port && this.port.isOpen()
+    }
+
+    //
+    // This resolves when the device is properly connected - a good starting point for a program
+    //
 
     onceConnected() {
         return new Promise((resolve, reject) => {
@@ -170,7 +186,7 @@ module.exports = class Programmer extends EventEmitter {
         clearTimeout(this.responseTimeout)
         this.responseTimeout = setTimeout(() => {
             console.debug('Bootloader response timeout.')
-            this.emit('responseTimeout', 'Error on command: ' + command)
+            this.emit('responseTimeout', 'Error on command: ' + [...command])
         }, 5000)
 
         return request.length
@@ -181,11 +197,6 @@ module.exports = class Programmer extends EventEmitter {
     //
 
     upload(filename = 'test.hex') {
-        let txcount = 0,
-            rxcount = 0,
-            txsize = 0,
-            rxsize = 0
-
         // Read file line-by-line syncronously
         var lines = fs.readFileSync(filename, 'utf-8').split('\n')
 
@@ -195,6 +206,15 @@ module.exports = class Programmer extends EventEmitter {
         // Check Intel HEX format
         if (lines.find(l => l.length < 7)) throw ('Invalid hex file')
 
+        // Byte progress object
+        let bytes = {
+            total: lines.reduce((total, l) => total += (l.length - 1) / 2, 0),
+            sent: 0,
+            get percent() {
+                return bytes.sent / bytes.total
+            }
+        }
+
         // Current line being sent
         var currentLine = 0
 
@@ -202,18 +222,28 @@ module.exports = class Programmer extends EventEmitter {
         return new Promise((resolve, reject) => {
             var sendLine = () => {
                 let line = lines[currentLine]
+
                 // Remove colon and convert to byte array
-                try {
-                    line = line.slice(1).match(/.{1,2}/g).map(c => parseInt(c, 16)).map(c => String.fromCharCode(c))
-                } catch (e) {
-                    console.log(lines.length)
-                }
+                line = line.slice(1).match(/.{1,2}/g).map(c => parseInt(c, 16)).map(c => String.fromCharCode(c))
 
                 // Send the line
                 this.send(['\x03', ...line])
 
+                // If the command times out, reject promise
+                const timeoutCb = e => reject(e)
+
+                this.once('responseTimeout', timeoutCb)
+
                 // Wait for new data to be received
                 this.once('newData', d => {
+                    // Remove timeout listener
+                    this.removeListener('responseTimeout', timeoutCb)
+
+                    // Update status bytes
+                    bytes.sent += line.length
+                    this.emit('uploadProgress', bytes)
+
+                    // Write a dot to terminal
                     process.stdout.write('.')
                     currentLine++
                     if (currentLine < lines.length - 1) sendLine()
@@ -224,16 +254,9 @@ module.exports = class Programmer extends EventEmitter {
         })
     }
 
-    // # Convert from ASCII to hexdec
-    // data = unhexlify(line[1: -1])
-    // txsize += send_request(port, '\x03' + data)
-    // response = read_response(port, '\x03')
-    // rxsize += len(response) + 4
-    // txcount += 1
-    // rxcount += 1
-    // print('*')
-    // return (txcount, txsize, rxcount, rxsize)
-
+    //
+    // Fetch bootloader version
+    //
 
     version() {
         console.debug('Querying Bootloader Version..')
@@ -244,7 +267,8 @@ module.exports = class Programmer extends EventEmitter {
         // Create a promise
         return new Promise((resolve, reject) => {
             // If the command times out, reject promise
-            this.once('responseTimeout', e => reject(e))
+            const timeoutCb = e => reject(e)
+            this.once('responseTimeout', timeoutCb)
 
             // Once new data arrives, print the version (if not corrupted)
             this.once('newData', d => {
@@ -257,23 +281,25 @@ module.exports = class Programmer extends EventEmitter {
                 // Print version in debug mode
                 console.debug(`Version: ${prettyVersion}`)
 
+                // Remove timeout listener
+                this.removeListener('responseTimeout', timeoutCb)
+
                 // Resolve promise with formatted version string
                 resolve(prettyVersion)
             })
+        }).catch(() => {
+            console.debug('Problem running program.')
         })
     }
-}
 
-function hexToBytes(hex) {
-    for (var bytes = [], c = 0; c < hex.length; c += 2)
-        bytes.push(parseInt(hex.substr(c, 2), 16));
-    return bytes;
-}
+    //
+    // Run program
+    //
 
-function bytesToHex(bytes) {
-    for (var hex = [], i = 0; i < bytes.length; i++) {
-        hex.push((bytes[i] >>> 4).toString(16));
-        hex.push((bytes[i] & 0xF).toString(16));
+    run() {
+        console.debug('Running Program..')
+
+        // Send run command
+        this.send(['\x05'])
     }
-    return hex.join("");
 }

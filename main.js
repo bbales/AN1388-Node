@@ -8,8 +8,17 @@ Programmer.onceConnected().then(() => {
     //     process.exit()
     // })
 
+    Programmer.on('uploadProgress', e => {
+        // console.log(e.percent)
+    })
+
     Programmer.upload().then(() => {
         console.log('Upload Complete')
+        Programmer.run()
+        process.exit()
+    }).catch(e => {
+        console.log('Upload Failure')
+        process.exit()
     })
     // Programmer.crc16(['\x03',
     //     '\x02',
