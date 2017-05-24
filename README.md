@@ -1,19 +1,15 @@
 # AN1388-Node
 
-Implementation of Microchip's [AN1388][an1388] in Node.js using UART.
-
-Adapted from Camil Staps' python implementation.
+Implementation of Microchip's [AN1388][an1388] in Node.js using UART. Adapted from Camil Staps' python implementation.
 
   [an1388]: http://ww1.microchip.com/downloads/en/AppNotes/01388B.pdf
 
-Its a good idea to add the current user to the dialout group, allowing access to reading and writing /dev/ devices.
-
-`usermod -a -G dialout $USER`
+It is a good idea to add the current user to the dialout group, allowing access to reading and writing `/dev/` devices using this command: `usermod -a -G dialout $USER`. Most methods accept byte array arguments.
 
 # API
 <a name="Programmer"></a>
 
-## Programmer ⇐ <code>EventEmitter</code>
+### Programmer ⇐ <code>EventEmitter</code>
 Instantiable bootloader programmer class. Provides access to serial port UART programmer
 
 **Kind**: global class  
@@ -22,6 +18,7 @@ Instantiable bootloader programmer class. Provides access to serial port UART pr
 * [Programmer](#Programmer) ⇐ <code>EventEmitter</code>
     * [new Programmer(baudRate)](#new_Programmer_new)
     * [.connected](#Programmer+connected) ⇒ <code>boolean</code>
+    * [.debugEnable()](#Programmer+debugEnable)
     * [.onceConnected()](#Programmer+onceConnected) ⇒ <code>Promise</code>
     * [.crc16(data)](#Programmer+crc16) ⇒ <code>array</code>
     * [.escape(data)](#Programmer+escape) ⇒ <code>array</code>
@@ -49,6 +46,12 @@ Alias for checking connection status
 
 **Kind**: instance property of [<code>Programmer</code>](#Programmer)  
 **Returns**: <code>boolean</code> - - connection status  
+<a name="Programmer+debugEnable"></a>
+
+### programmer.debugEnable()
+Enable debugging
+
+**Kind**: instance method of [<code>Programmer</code>](#Programmer)  
 <a name="Programmer+onceConnected"></a>
 
 ### programmer.onceConnected() ⇒ <code>Promise</code>

@@ -12,7 +12,7 @@ Programmer.onceConnected().then(() => {
         // console.log(e.percent)
     })
 
-    Programmer.upload().then(() => {
+    Programmer.upload('test.hex').then(() => {
         console.log('Upload Complete')
         Programmer.run()
         process.exit()
@@ -21,7 +21,3 @@ Programmer.onceConnected().then(() => {
         process.exit()
     })
 })
-
-// Set up debugging
-console._debug = 1
-console.debug = (...args) => console._debug && console.log(...args)

@@ -2,7 +2,6 @@
 
 const Serial = require('serialport')
 const EventEmitter = require('events').EventEmitter
-
 const fs = require('fs')
 
 /**
@@ -97,6 +96,18 @@ class Programmer extends EventEmitter {
     }
 
     /**
+     * Enable debugging
+     */
+
+    debugEnable() {
+        // Set up debugging
+        console._debug = 1
+
+        // Override debug method, haters
+        console.debug = (...args) => console._debug && console.log(...args)
+    }
+
+    /**
      * This resolves when the device is properly connected - a good starting point for a program
      * @return {Promise} - a promise that resolves when the programmer is connected
      */
@@ -121,12 +132,14 @@ class Programmer extends EventEmitter {
     crc16(data) {
         let i = 0
         let crc = 0
+        let shift
         data.forEach(byte => {
-            i = (crc >> 12) ^ (byte.charCodeAt(0) >> 4)
-            crc = this.CRCLookup[i & 0x0f] ^ (crc << 4)
-
-            i = (crc >> 12) ^ (byte.charCodeAt(0) >> 0)
-            crc = this.CRCLookup[i & 0x0f] ^ (crc << 4)
+            shift = (bits) => {
+                i = (crc >> 12) ^ (byte.charCodeAt(0) >> bits)
+                crc = this.CRCLookup[i & 0x0f] ^ (crc << 4)
+            }
+            shift(4)
+            shift(0)
         })
 
         // Return unicode array
@@ -140,8 +153,13 @@ class Programmer extends EventEmitter {
      */
 
     escape(data) {
+        // Special characters
         const check = ['\x10', '\x01', '\x04']
+
+        // Escaped arrat to be built
         let escaped = []
+
+        // Escape the data
         data
             .map(d => check.indexOf(d) >= 0 ? '\x10' + d : d)
             .forEach(c => escaped.push(...c))
@@ -238,7 +256,11 @@ class Programmer extends EventEmitter {
                 let line = lines[currentLine]
 
                 // Remove colon and convert to byte array
-                line = line.slice(1).match(/.{1,2}/g).map(c => parseInt(c, 16)).map(c => String.fromCharCode(c))
+                line = line
+                    .slice(1)
+                    .match(/.{1,2}/g)
+                    .map(c => parseInt(c, 16))
+                    .map(c => String.fromCharCode(c))
 
                 // Send the line
                 this.send(['\x03', ...line])
