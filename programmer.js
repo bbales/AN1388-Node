@@ -13,14 +13,12 @@ module.exports = class Programmer {
         this.baudRate = baudRate
 
         // Open the USB port
-        this._configurePort().then(() => {
-            console.log((`Port '${this._port}' opened sucessfully!`))
-        })
+        this._configurePort().then(() => console.log((`Port '${this._port}' opened sucessfully!`)))
     }
 
     async _configurePort(port = '/dev/ttyUSB0') {
         // Fetch available USB ports
-        var usbPorts = await new Promise((resolve, reject) => {
+        let usbPorts = await new Promise((resolve, reject) => {
             return Serial.list((e, p) => {
                 if (e) return reject(e)
                 return resolve(p.filter(n => n.comName.indexOf('USB') > -1))
@@ -86,7 +84,9 @@ module.exports = class Programmer {
     //
 
     escape(data) {
-
+        const check = ['\x10', '\x01', '\x04']
+        data = typeof(data) == 'string' ? data.split('') : data
+        return data.map(d => check.indexOf(d) >= 0 ? '\x10' + d : d)
     }
 
     //
@@ -94,7 +94,18 @@ module.exports = class Programmer {
     //
 
     unescape(data) {
-
+        data = typeof(data) == 'string' ? data.split('') : data
+        let escaping = false
+        let str = ''
+        data.forEach(c => {
+            if (escaping) {
+                str += c
+                escaping = false
+            } else if (c.charCodeAt(0) == '\x10'.charCodeAt(0)) {
+                escaping = true
+            } else str += c
+        })
+        return str
     }
 
     //

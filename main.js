@@ -15,4 +15,5 @@ let dataw = [
 
 Programmer.onceConnected().then(() => {
     console.log(Programmer._port)
+    console.log(Programmer.unescape(Programmer.escape('\x02\x10\x01\x04\x05')).split(''))
 })
