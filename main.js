@@ -8,7 +8,9 @@ Programmer.onceConnected().then(() => {
     //     process.exit()
     // })
 
-    Programmer.upload()
+    Programmer.upload().then(() => {
+        console.log('Upload Complete')
+    })
     // Programmer.crc16(['\x03',
     //     '\x02',
     //     '\x00',

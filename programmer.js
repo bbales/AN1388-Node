@@ -152,24 +152,18 @@ module.exports = class Programmer extends EventEmitter {
     //
 
     async send(command) {
-        console.log(`send: ${command}`)
-
         // Escape control characters
         command = this.escape(command)
 
-        console.log(`escaped: ${command}`)
-
         // Build request
-        let request = ['\x01', ...command, ...this.escape(this.crc16(command)), '\x04']
-
-        console.log(`request: ${request}`)
+        let request = ['\x01', ...command, ...this.escape(this.crc16(command)), '\x04'].map(c => c.charCodeAt(0))
 
         // Verify connection
         if (!this.connected) throw 'Port not connected, unable to write.'
 
         // Write request to serial
         await new Promise((resolve, reject) => {
-            this.port.write(request.join(''), e => e ? resolve(false) : resolve(true))
+            this.port.write(request, e => e ? resolve(false) : resolve(true))
         })
 
         // Start timeout
@@ -205,29 +199,29 @@ module.exports = class Programmer extends EventEmitter {
         var currentLine = 0
 
         // Send each line individually
-        var sendLine = () => {
-            let line = lines[currentLine]
-            // Remove colon and convert to byte array
-            console.log('sendlinemap')
-            line = line.slice(1).match(/.{1,2}/g).map(c => parseInt(c, 16)).map(c => String.fromCharCode(c))
+        return new Promise((resolve, reject) => {
+            var sendLine = () => {
+                let line = lines[currentLine]
+                // Remove colon and convert to byte array
+                try {
+                    line = line.slice(1).match(/.{1,2}/g).map(c => parseInt(c, 16)).map(c => String.fromCharCode(c))
+                } catch (e) {
+                    console.log(lines.length)
+                }
 
-            // Send the line
-            this.send(['\x03', ...line])
+                // Send the line
+                this.send(['\x03', ...line])
 
-            // Wait for new data to be received
-            new Promise((resolve, reject) => {
-
+                // Wait for new data to be received
                 this.once('newData', d => {
                     process.stdout.write('.')
-                    return resolve(true)
+                    currentLine++
+                    if (currentLine < lines.length - 1) sendLine()
+                    else resolve(true)
                 })
-                resolve()
-            }).then(() => {
-                currentLine++
-                if (currentLine < lines.length) sendLine()
-            })
-        }
-        sendLine()
+            }
+            sendLine()
+        })
     }
 
     // # Convert from ASCII to hexdec
