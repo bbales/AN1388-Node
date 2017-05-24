@@ -1,7 +1,12 @@
 'use strict'
 
 const Serial = require('serialport')
-const EventEmitter = require('events').EventEmitter;
+const EventEmitter = require('events').EventEmitter
+
+const fs = require('fs')
+const readline = require('readline')
+const stream = require('stream')
+
 
 module.exports = class Programmer extends EventEmitter {
     constructor(baudRate = 115200) {
@@ -68,7 +73,7 @@ module.exports = class Programmer extends EventEmitter {
         if (output[0] !== '\x01' || output[output.length - 1] !== '\x04') throw ('Bad response')
 
         // Unescape control characters and strip front and back
-        let response = this.unescape(output.slice(1, -1)).split('')
+        let response = this.unescape(output.slice(1, -1))
 
         // Set the last response
         this.lastResponse = response.slice(1, -2)
@@ -89,11 +94,10 @@ module.exports = class Programmer extends EventEmitter {
     }
 
     //
-    // Cyclic Redundency Check (CRC) 16-bit data
+    // Cyclic Redundency Check (CRC) 16-bit data - Verified
     //
 
     crc16(data) {
-        data = typeof(data) == 'string' ? data.split('') : data
         let i = 0
         let crc = 0
         data.forEach(byte => {
@@ -104,11 +108,8 @@ module.exports = class Programmer extends EventEmitter {
             crc = this.CRCLookup[i & 0x0f] ^ (crc << 4)
         })
 
-        // Return character string
-        return String.fromCharCode(crc & 0xff) + String.fromCharCode((crc >> 8) & 0xff)
-
-        // Return Unicode representation
-        // return '\\x' + (crc & 0xff).toString(16) + '\\x' + ((crc >> 8) & 0xff).toString(16)
+        // Return unicode array
+        return [String.fromCharCode(crc & 0xff), String.fromCharCode((crc >> 8) & 0xff)]
     }
 
     //
@@ -117,8 +118,13 @@ module.exports = class Programmer extends EventEmitter {
 
     escape(data) {
         const check = ['\x10', '\x01', '\x04']
-        data = typeof(data) == 'string' ? data.split('') : data
-        return data.map(d => check.indexOf(d) >= 0 ? '\x10' + d : d).toString()
+        let escaped = []
+        data
+            .map(d => check.indexOf(d) >= 0 ? '\x10' + d : d)
+            .forEach(c => escaped.push(...c))
+
+        // Return unicode array
+        return escaped
     }
 
     //
@@ -126,18 +132,19 @@ module.exports = class Programmer extends EventEmitter {
     //
 
     unescape(data) {
-        data = typeof(data) == 'string' ? data.split('') : data
         let escaping = false
-        let str = ''
+        let unescaped = []
         data.forEach(c => {
             if (escaping) {
-                str += c
+                unescaped.push(c)
                 escaping = false
             } else if (c.charCodeAt(0) == '\x10'.charCodeAt(0)) {
                 escaping = true
-            } else str += c
+            } else unescaped.push(c)
         })
-        return str
+
+        // Return unicode array
+        return unescaped
     }
 
     //
@@ -145,21 +152,28 @@ module.exports = class Programmer extends EventEmitter {
     //
 
     async send(command) {
+        console.log(`send: ${command}`)
+
         // Escape control characters
         command = this.escape(command)
 
+        console.log(`escaped: ${command}`)
+
         // Build request
-        let request = `\x01` + command + this.escape(this.crc16(command)) + `\x04`
+        let request = ['\x01', ...command, ...this.escape(this.crc16(command)), '\x04']
+
+        console.log(`request: ${request}`)
 
         // Verify connection
         if (!this.connected) throw 'Port not connected, unable to write.'
 
         // Write request to serial
         await new Promise((resolve, reject) => {
-            this.port.write(new Buffer(request), e => e ? reject(e) : resolve())
+            this.port.write(request.join(''), e => e ? resolve(false) : resolve(true))
         })
 
         // Start timeout
+        clearTimeout(this.responseTimeout)
         this.responseTimeout = setTimeout(() => {
             console.debug('Bootloader response timeout.')
             this.emit('responseTimeout', 'Error on command: ' + command)
@@ -169,35 +183,69 @@ module.exports = class Programmer extends EventEmitter {
     }
 
     //
-    // Read the Response
-    //
-
-    response(command) {
-        console.log(command)
-        // response = unescape(response[1: -1])
-        //
-        // # Verify SOH, EOT and command fields
-        // if response[0] != command:
-        //     raise IOError('Unexpected response type from bootloader')
-        // if crc16(response[: -2]) != response[-2: ]:
-        //     raise IOError('Invalid CRC from bootloader')
-        //
-        // return response[1: -2]
-    }
-
-    //
     // Upload/Flash a Hex File
     //
 
-    upload(filename) {
+    upload(filename = 'test.hex') {
+        let txcount = 0,
+            rxcount = 0,
+            txsize = 0,
+            rxsize = 0
 
+        // Read file line-by-line syncronously
+        var lines = fs.readFileSync(filename, 'utf-8').split('\n')
+
+        // Allow enough listeners to accomodate for each line
+        this.setMaxListeners(lines.length + 10)
+
+        // Check Intel HEX format
+        if (lines.find(l => l.length < 7)) throw ('Invalid hex file')
+
+        // Current line being sent
+        var currentLine = 0
+
+        // Send each line individually
+        var sendLine = () => {
+            let line = lines[currentLine]
+            // Remove colon and convert to byte array
+            console.log('sendlinemap')
+            line = line.slice(1).match(/.{1,2}/g).map(c => parseInt(c, 16)).map(c => String.fromCharCode(c))
+
+            // Send the line
+            this.send(['\x03', ...line])
+
+            // Wait for new data to be received
+            new Promise((resolve, reject) => {
+
+                this.once('newData', d => {
+                    process.stdout.write('.')
+                    return resolve(true)
+                })
+                resolve()
+            }).then(() => {
+                currentLine++
+                if (currentLine < lines.length) sendLine()
+            })
+        }
+        sendLine()
     }
+
+    // # Convert from ASCII to hexdec
+    // data = unhexlify(line[1: -1])
+    // txsize += send_request(port, '\x03' + data)
+    // response = read_response(port, '\x03')
+    // rxsize += len(response) + 4
+    // txcount += 1
+    // rxcount += 1
+    // print('*')
+    // return (txcount, txsize, rxcount, rxsize)
+
 
     version() {
         console.debug('Querying Bootloader Version..')
 
         // Send version command
-        this.send('\x01')
+        this.send(['\x01'])
 
         // Create a promise
         return new Promise((resolve, reject) => {
@@ -206,14 +254,32 @@ module.exports = class Programmer extends EventEmitter {
 
             // Once new data arrives, print the version (if not corrupted)
             this.once('newData', d => {
+                // Verify command in response
                 if (d[0] !== '\x01') reject('Unexpected response type from bootloader')
 
+                // Format version hex characters
                 var prettyVersion = d.map(c => '0' + c.charCodeAt(0)).join('')
 
-                console.log(`Version: ${prettyVersion}`)
+                // Print version in debug mode
+                console.debug(`Version: ${prettyVersion}`)
 
+                // Resolve promise with formatted version string
                 resolve(prettyVersion)
             })
         })
     }
+}
+
+function hexToBytes(hex) {
+    for (var bytes = [], c = 0; c < hex.length; c += 2)
+        bytes.push(parseInt(hex.substr(c, 2), 16));
+    return bytes;
+}
+
+function bytesToHex(bytes) {
+    for (var hex = [], i = 0; i < bytes.length; i++) {
+        hex.push((bytes[i] >>> 4).toString(16));
+        hex.push((bytes[i] & 0xF).toString(16));
+    }
+    return hex.join("");
 }
