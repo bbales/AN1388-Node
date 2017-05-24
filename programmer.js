@@ -12,11 +12,14 @@ module.exports = class Programmer extends EventEmitter {
             0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1c1, 0xf1ef
         ]
 
+        // Debug level
+        this.debug = 1
+
         // Set serial baud rate
         this.baudRate = baudRate
 
         // Open the USB port
-        this._configurePort().then(() => console.log((`Port '${this._port}' opened sucessfully!`)))
+        this._configurePort().then(() => console.debug((`Port '${this._port}' opened sucessfully!`)))
     }
 
     async _configurePort(port = '/dev/ttyUSB0') {
@@ -42,9 +45,7 @@ module.exports = class Programmer extends EventEmitter {
         this.responseData = []
 
         // Read data when it is received
-        this.port.on('data', data => this.handleData(data))
-
-        this.responseData = []
+        this.port.on('data', data => this._handleData(data))
 
         return true
     }
@@ -53,7 +54,10 @@ module.exports = class Programmer extends EventEmitter {
         return !!this.port && this.port.isOpen()
     }
 
-    handleData(data) {
+    _handleData(data) {
+        // Clear response timeout
+        clearTimeout(this.responseTimeout)
+
         // Create a new array for buffer conversion
         var output = []
 
@@ -69,6 +73,7 @@ module.exports = class Programmer extends EventEmitter {
         // Set the last response
         this.lastResponse = response.slice(1, -2)
 
+        // Emit new processed data event
         this.emit('newData', this.lastResponse)
     }
 
@@ -140,14 +145,25 @@ module.exports = class Programmer extends EventEmitter {
     //
 
     async send(command) {
+        // Escape control characters
         command = this.escape(command)
+
+        // Build request
         let request = `\x01` + command + this.escape(this.crc16(command)) + `\x04`
 
+        // Verify connection
         if (!this.connected) throw 'Port not connected, unable to write.'
 
+        // Write request to serial
         await new Promise((resolve, reject) => {
             this.port.write(new Buffer(request), e => e ? reject(e) : resolve())
         })
+
+        // Start timeout
+        this.responseTimeout = setTimeout(() => {
+            console.debug('Bootloader response timeout.')
+            this.emit('responseTimeout', 'Error on command: ' + command)
+        }, 5000)
 
         return request.length
     }
@@ -158,23 +174,6 @@ module.exports = class Programmer extends EventEmitter {
 
     response(command) {
         console.log(command)
-        // response = ''
-        // while (response.length < 4 | response[response.length - 1] != '\x04' | response[response.length - 2] == '\x10') {
-        //     byte = port.read(1)
-        //     if len(byte) == 0:
-        //         raise IOError('Bootloader response timed out')
-        //     if byte == '\x01'
-        //     or len(response) > 0:
-        //         response += byte
-        // }
-        //
-        // if DEBUG_LEVEL >= 2:
-        //     print('<', hexlify(response))
-        //
-        // if response[0] != '\x01'
-        // or response[-1] != '\x04':
-        //     raise IOError('Invalid response from bootloader')
-        //
         // response = unescape(response[1: -1])
         //
         // # Verify SOH, EOT and command fields
@@ -192,5 +191,29 @@ module.exports = class Programmer extends EventEmitter {
 
     upload(filename) {
 
+    }
+
+    version() {
+        console.debug('Querying Bootloader Version..')
+
+        // Send version command
+        this.send('\x01')
+
+        // Create a promise
+        return new Promise((resolve, reject) => {
+            // If the command times out, reject promise
+            this.once('responseTimeout', e => reject(e))
+
+            // Once new data arrives, print the version (if not corrupted)
+            this.once('newData', d => {
+                if (d[0] !== '\x01') reject('Unexpected response type from bootloader')
+
+                var prettyVersion = d.map(c => '0' + c.charCodeAt(0)).join('')
+
+                console.log(`Version: ${prettyVersion}`)
+
+                resolve(prettyVersion)
+            })
+        })
     }
 }
