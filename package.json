@@ -1,14 +1,18 @@
 {
   "name": "an1388-node",
   "version": "1.0.0",
-  "main": "programmer.js",
+  "main": "example.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "doc": "jsdoc2md -c jsdoc.conf programmer.js >> README.md"
   },
   "author": "Benjamin Bales",
   "license": "ISC",
   "description": "",
   "dependencies": {
     "serialport": "^4.0.7"
+  },
+  "devDependencies": {
+    "jsdoc-strip-async-await": "^0.1.0",
+    "jsdoc-to-markdown": "^3.0.0"
   }
 }

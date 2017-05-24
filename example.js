@@ -22,5 +22,6 @@ Programmer.onceConnected().then(() => {
     })
 })
 
+// Set up debugging
 console._debug = 1
 console.debug = (...args) => console._debug && console.log(...args)

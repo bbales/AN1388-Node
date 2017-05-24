@@ -4,11 +4,16 @@ const Serial = require('serialport')
 const EventEmitter = require('events').EventEmitter
 
 const fs = require('fs')
-const readline = require('readline')
-const stream = require('stream')
 
-
-module.exports = class Programmer extends EventEmitter {
+/**
+ * Instantiable bootloader programmer class. Provides access to serial port UART programmer
+ * @extends EventEmitter
+ */
+class Programmer extends EventEmitter {
+    /**
+     * Create a programmer instance
+     * @param {number} baudRate - A standard UART baudrate, defaults to 115200
+     */
     constructor(baudRate = 115200) {
         super()
 
@@ -26,10 +31,6 @@ module.exports = class Programmer extends EventEmitter {
         // Open the USB port
         this._configurePort().then(() => console.debug((`Port '${this._port}' opened sucessfully!`)))
     }
-
-    //
-    // Set up the UART port
-    //
 
     async _configurePort(port = '/dev/ttyUSB0') {
         // Fetch available USB ports
@@ -86,17 +87,19 @@ module.exports = class Programmer extends EventEmitter {
         this.emit('newData', this.lastResponse)
     }
 
-    //
-    // Alias for checking connection status
-    //
+    /**
+     * Alias for checking connection status
+     * @return {boolean} - connection status
+     */
 
     get connected() {
         return !!this.port && this.port.isOpen()
     }
 
-    //
-    // This resolves when the device is properly connected - a good starting point for a program
-    //
+    /**
+     * This resolves when the device is properly connected - a good starting point for a program
+     * @return {Promise} - a promise that resolves when the programmer is connected
+     */
 
     onceConnected() {
         return new Promise((resolve, reject) => {
@@ -109,9 +112,11 @@ module.exports = class Programmer extends EventEmitter {
         })
     }
 
-    //
-    // Cyclic Redundency Check (CRC) 16-bit data - Verified
-    //
+    /**
+     * Cyclic Redundency Check (CRC) 16-bit data - Verified
+     * @param {array} data - an array of bytes to calculate the CRC for
+     * @return {array} - an array of 2 bytes that represent the CRC
+     */
 
     crc16(data) {
         let i = 0
@@ -128,9 +133,11 @@ module.exports = class Programmer extends EventEmitter {
         return [String.fromCharCode(crc & 0xff), String.fromCharCode((crc >> 8) & 0xff)]
     }
 
-    //
-    // Escape Control Characters
-    //
+    /**
+     * Escape Control Characters
+     * @param {array} data - array of bytes to escape
+     * @return {array} - escaped byte array
+     */
 
     escape(data) {
         const check = ['\x10', '\x01', '\x04']
@@ -143,9 +150,11 @@ module.exports = class Programmer extends EventEmitter {
         return escaped
     }
 
-    //
-    // Unescape Control Characters
-    //
+    /**
+     * Unescape Control Characters
+     * @param {array} data - array of bytes to unescape
+     * @return {array} - unescaped byte array
+     */
 
     unescape(data) {
         let escaping = false
@@ -163,9 +172,11 @@ module.exports = class Programmer extends EventEmitter {
         return unescaped
     }
 
-    //
-    // Send A Command
-    //
+    /**
+     * Send A Command - synchronous
+     * @param {array} command - byte array representing command
+     * @return {number} - length of command sent
+     */
 
     async send(command) {
         // Escape control characters
@@ -192,9 +203,12 @@ module.exports = class Programmer extends EventEmitter {
         return request.length
     }
 
-    //
-    // Upload/Flash a Hex File
-    //
+    /**
+     * Upload/Flash a Hex File
+     * @param {string} filename - location of Intel formatted hexfile to upload
+     * @return {Promise} - promise that resolves on upload success, rejects on error
+     * @fires Programmer#uploadProgress
+     */
 
     upload(filename = 'test.hex') {
         // Read file line-by-line syncronously
@@ -241,6 +255,15 @@ module.exports = class Programmer extends EventEmitter {
 
                     // Update status bytes
                     bytes.sent += line.length
+
+                    /**
+                     * Upload Progress events
+                     * @event Programmer#uploadProgress
+                     * @type {object}
+                     * @property {number} total - Total bytes to be sent
+                     * @property {number} sent - Bytes sent
+                     * @property {number} percent - Percentage of bytes sent
+                     */
                     this.emit('uploadProgress', bytes)
 
                     // Write a dot to terminal
@@ -254,9 +277,10 @@ module.exports = class Programmer extends EventEmitter {
         })
     }
 
-    //
-    // Fetch bootloader version
-    //
+    /**
+     * Fetch bootloader version
+     * @return {Promise} - promise that resolves when the version is returned
+     */
 
     version() {
         console.debug('Querying Bootloader Version..')
@@ -292,9 +316,9 @@ module.exports = class Programmer extends EventEmitter {
         })
     }
 
-    //
-    // Run program
-    //
+    /**
+     * Run program
+     */
 
     run() {
         console.debug('Running Program..')
@@ -303,3 +327,5 @@ module.exports = class Programmer extends EventEmitter {
         this.send(['\x05'])
     }
 }
+
+module.exports = Programmer
