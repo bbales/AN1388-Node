@@ -8,7 +8,7 @@ const fs = require('fs')
  * Instantiable bootloader programmer class. Provides access to serial port UART programmer
  * @extends EventEmitter
  */
-class Programmer extends EventEmitter {
+module.exports = class Programmer extends EventEmitter {
     /**
      * Create a programmer instance
      * @param {number} baudRate - A standard UART baudrate, defaults to 115200
@@ -23,6 +23,8 @@ class Programmer extends EventEmitter {
 
         // Debug level
         this.debug = 1
+
+        this.debugEnable()
 
         // Set serial baud rate
         this.baudRate = baudRate
@@ -45,7 +47,10 @@ class Programmer extends EventEmitter {
 
         // Set up UART
         const serialOptions = {
-            baudRate: this.baudRate
+            baudRate: this.baudRate,
+            dataBits: 8,
+            parity: 'none',
+            stopBits: 1
         }
 
         // Open first available (for now)
@@ -67,17 +72,18 @@ class Programmer extends EventEmitter {
         // Clear response timeout
         clearTimeout(this.responseTimeout)
 
-        // Create a new array for buffer conversion
-        var output = []
+        this.responseData.push(...Array.from(data))
 
-        // Fill array with contents of buffer and convert to unicode
-        for (var i = 0; i < data.length; i++) output.push(String.fromCharCode(data[i]))
-
-        // Check sequence characters
-        if (output[0] !== '\x01' || output[output.length - 1] !== '\x04') throw ('Bad response')
+        if (this.responseData.length < 4 ||
+            this.responseData[this.responseData.length - 1] !== 0x04 ||
+            this.responseData[this.responseData.length - 2] == 0x10)
+            return
 
         // Unescape control characters and strip front and back
-        let response = this.unescape(output.slice(1, -1))
+        let response = this.unescape(this.responseData.slice(1, -1))
+
+        // Empty response buffer
+        this.responseData = []
 
         // Set the last response
         this.lastResponse = response.slice(1, -2)
@@ -107,6 +113,11 @@ class Programmer extends EventEmitter {
         console.debug = (...args) => console._debug && console.log(...args)
     }
 
+    debugDisable() {
+        // Clear debug flag
+        console._debug = 0
+    }
+
     /**
      * This resolves when the device is properly connected - a good starting point for a program
      * @return {Promise} - a promise that resolves when the programmer is connected
@@ -132,18 +143,16 @@ class Programmer extends EventEmitter {
     crc16(data) {
         let i = 0
         let crc = 0
-        let shift
+
         data.forEach(byte => {
-            shift = (bits) => {
-                i = (crc >> 12) ^ (byte.charCodeAt(0) >> bits)
-                crc = this.CRCLookup[i & 0x0f] ^ (crc << 4)
-            }
-            shift(4)
-            shift(0)
+            i = (crc >> 12) ^ (byte >> 4)
+            crc = this.CRCLookup[i & 0x000f] ^ (crc << 4)
+            i = (crc >> 12) ^ (byte >> 0)
+            crc = this.CRCLookup[i & 0x000f] ^ (crc << 4)
         })
 
         // Return unicode array
-        return [String.fromCharCode(crc & 0xff), String.fromCharCode((crc >> 8) & 0xff)]
+        return [crc & 0x00ff, (crc >> 8) & 0x00ff]
     }
 
     /**
@@ -154,15 +163,18 @@ class Programmer extends EventEmitter {
 
     escape(data) {
         // Special characters
-        const check = ['\x10', '\x01', '\x04']
+        const check = [0x10, 0x01, 0x04]
 
         // Escaped arrat to be built
         let escaped = []
+        let temp = []
 
         // Escape the data
-        data
-            .map(d => check.indexOf(d) >= 0 ? '\x10' + d : d)
-            .forEach(c => escaped.push(...c))
+        temp = data.map(d => (check.includes(d) ? [0x0010, d] : d))
+        temp.forEach(c => {
+            if (typeof c == 'object') escaped.push(...c)
+            else escaped.push(c)
+        })
 
         // Return unicode array
         return escaped
@@ -181,7 +193,7 @@ class Programmer extends EventEmitter {
             if (escaping) {
                 unescaped.push(c)
                 escaping = false
-            } else if (c.charCodeAt(0) == '\x10'.charCodeAt(0)) {
+            } else if (c == 0x10) {
                 escaping = true
             } else unescaped.push(c)
         })
@@ -201,20 +213,21 @@ class Programmer extends EventEmitter {
         command = this.escape(command)
 
         // Build request
-        let request = ['\x01', ...command, ...this.escape(this.crc16(command)), '\x04'].map(c => c.charCodeAt(0))
+        let request = [0x01, ...command, ...(this.escape(this.crc16(command))), 0x04]
 
         // Verify connection
         if (!this.connected) throw 'Port not connected, unable to write.'
 
         // Write request to serial
         await new Promise((resolve, reject) => {
-            this.port.write(request, e => e ? resolve(false) : resolve(true))
+            this.port.write(Buffer.from(request), e => e ? reject(e) : resolve())
         })
 
         // Start timeout
         clearTimeout(this.responseTimeout)
         this.responseTimeout = setTimeout(() => {
             console.debug('Bootloader response timeout.')
+            this.responseData = []
             this.emit('responseTimeout', 'Error on command: ' + [...command])
         }, 5000)
 
@@ -263,7 +276,7 @@ class Programmer extends EventEmitter {
                     .map(c => String.fromCharCode(c))
 
                 // Send the line
-                this.send(['\x03', ...line])
+                this.send([0x03, ...line])
 
                 // If the command times out, reject promise
                 const timeoutCb = e => reject(e)
@@ -291,10 +304,14 @@ class Programmer extends EventEmitter {
                     // Write a dot to terminal
                     process.stdout.write('.')
                     currentLine++
+
+                    // Recurse or resolve
                     if (currentLine < lines.length - 1) sendLine()
                     else resolve(true)
                 })
             }
+
+            // Recursively send lines until EOF is reached
             sendLine()
         })
     }
@@ -308,7 +325,7 @@ class Programmer extends EventEmitter {
         console.debug('Querying Bootloader Version..')
 
         // Send version command
-        this.send(['\x01'])
+        this.send([0x01])
 
         // Create a promise
         return new Promise((resolve, reject) => {
@@ -319,10 +336,10 @@ class Programmer extends EventEmitter {
             // Once new data arrives, print the version (if not corrupted)
             this.once('newData', d => {
                 // Verify command in response
-                if (d[0] !== '\x01') reject('Unexpected response type from bootloader')
+                if (d[0] !== 0x01) reject('Unexpected response type from bootloader')
 
                 // Format version hex characters
-                var prettyVersion = d.map(c => '0' + c.charCodeAt(0)).join('')
+                var prettyVersion = '0' + d[0] + '0' + d[1]
 
                 // Print version in debug mode
                 console.debug(`Version: ${prettyVersion}`)
@@ -346,8 +363,6 @@ class Programmer extends EventEmitter {
         console.debug('Running Program..')
 
         // Send run command
-        this.send(['\x05'])
+        this.send([0x05])
     }
 }
-
-module.exports = Programmer
