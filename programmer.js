@@ -21,10 +21,10 @@ module.exports = class Programmer extends EventEmitter {
             0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1c1, 0xf1ef
         ]
 
-        // Debug level
-        this.debug = 1
-
         this.debugEnable()
+
+        // Debug level
+        this.debug = 0
 
         // Set serial baud rate
         this.baudRate = baudRate
@@ -229,7 +229,7 @@ module.exports = class Programmer extends EventEmitter {
             console.debug('Bootloader response timeout.')
             this.responseData = []
             this.emit('responseTimeout', 'Error on command: ' + [...command])
-        }, 5000)
+        }, 2000)
 
         return request.length
     }
@@ -265,6 +265,8 @@ module.exports = class Programmer extends EventEmitter {
 
         // Send each line individually
         return new Promise((resolve, reject) => {
+            this.per = 0
+
             var sendLine = () => {
                 let line = lines[currentLine]
 
@@ -273,7 +275,6 @@ module.exports = class Programmer extends EventEmitter {
                     .slice(1)
                     .match(/.{1,2}/g)
                     .map(c => parseInt(c, 16))
-                    .map(c => String.fromCharCode(c))
 
                 // Send the line
                 this.send([0x03, ...line])
@@ -299,10 +300,13 @@ module.exports = class Programmer extends EventEmitter {
                      * @property {number} sent - Bytes sent
                      * @property {number} percent - Percentage of bytes sent
                      */
-                    this.emit('uploadProgress', bytes)
+                    if (bytes.percent > this.per + 0.01 || bytes.percent >= 1.0) {
+                        this.per = bytes.percent
+                        this.emit('uploadProgress', bytes)
+                    }
 
                     // Write a dot to terminal
-                    process.stdout.write('.')
+                    if (this.debug) process.stdout.write('.')
                     currentLine++
 
                     // Recurse or resolve
