@@ -355,7 +355,37 @@ module.exports = class Programmer extends EventEmitter {
                 resolve(prettyVersion)
             })
         }).catch(() => {
-            console.debug('Problem running program.')
+            console.debug('Problem getting version.')
+        })
+    }
+
+    /**
+     * Fetch bootloader identifier
+     * @return {Promise} - promise that resolves when the version is returned
+     */
+
+    identifier() {
+        console.debug('Querying Bootloader Identifier..')
+
+        // Send version command
+        this.send([0x06])
+
+        // Create a promise
+        return new Promise((resolve, reject) => {
+            // If the command times out, reject promise
+            const timeoutCb = e => reject(e)
+            this.once('responseTimeout', timeoutCb)
+
+            // Once new data arrives, print the version (if not corrupted)
+            this.once('newData', d => {
+                // Remove timeout listener
+                this.removeListener('responseTimeout', timeoutCb)
+
+                // Resolve promise with formatted version string
+                resolve(d)
+            })
+        }).catch((e) => {
+            console.debug('Problem getting identifier.', e)
         })
     }
 

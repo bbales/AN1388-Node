@@ -5,6 +5,9 @@ Programmer.onceConnected()
     .then(() => {
         // Enable verbose execution
         Programmer.debugEnable()
-        Programmer.run()
+
+        Programmer.identifier().then((r) => {
+            console.log(r)
+        })
     })
     .catch((e) => {})
