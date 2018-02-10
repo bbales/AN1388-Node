@@ -13,7 +13,7 @@ module.exports = class Programmer extends EventEmitter {
      * Create a programmer instance
      * @param {number} baudRate - A standard UART baudrate, defaults to 115200
      */
-    constructor(baudRate = 115200) {
+    constructor(port = '/dev/ttyUSB0', baudRate = 115200) {
         super()
 
         this.CRCLookup = [
